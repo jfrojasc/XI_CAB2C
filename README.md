@@ -1,2 +1,2 @@
-# XI_CAB2C
-http://3.13.151.78/XICA2B2C/
+R Code for "Performance evaluation of three machine learning algorithms for breast cancer classification" 
+Paper submitted to the XI Argentine Congress of Bioinformatics and Computational Biology (XI CAB2C) 
