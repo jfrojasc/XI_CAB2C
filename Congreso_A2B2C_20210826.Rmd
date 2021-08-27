@@ -1,0 +1,1036 @@
+---
+title: "Cancer de mama"
+author: "Jose Felix Rojas Cabeza"
+subtitle: "Por definir"
+date: "`r format(Sys.time(), '%Y / %B / %d')`"
+output: 
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: cerulean
+    toc: yes
+    toc_float: yes
+params:
+  data1: "./Data/BreastCancer1.csv"
+  data2: "./Data/WBC.csv"
+  ptrain: !r 2/3
+  seed_train: 378528 #805547
+  seed_alg: 303381   #713945
+---
+```{r setup, include=FALSE}
+require(knitr)
+# include this code chunk as-is to set options
+opts_chunk$set(comment = NA, prompt = TRUE, tidy = FALSE, 
+               fig.width = 7, fig.height = 7,echo = TRUE,
+               fig.align='center', message = FALSE, 
+               warning = FALSE, cache=TRUE)
+Sys.setlocale("LC_TIME", "C")
+
+# Random numbers for seeds: 713945, 805547
+```
+
+# Data
+
+## Data collection
+```{r}
+bc_full <- read.csv(params$data1, stringsAsFactors = FALSE)
+# dim(bc_full)
+# head(bc_full[1:4])
+
+bc_10 <- read.csv(params$data2, stringsAsFactors = FALSE)
+# dim(bc_10)
+# head(bc_10[1:4])
+
+names(bc_10)[1]<-paste("ID") # Numero de codigo de muestra #ID
+names(bc_10)[2]<-paste("Clump_thickness") # Espesor del grupo 1 - 10
+names(bc_10)[3]<-paste("Uniformty_c_size") # Uniformidad del tamano de la célula  1 - 10
+names(bc_10)[4]<-paste("Uniformty_c_shape") # Uniformidad de la forma de la célula 1 - 10 
+names(bc_10)[5]<-paste("Marginal_adhesion") # Adherencia marginal 1 - 10 
+names(bc_10)[6]<-paste("Sing_epith_c_size") # Tamano de la célula epitelial unica  1 - 10
+names(bc_10)[7]<-paste("Bare_nuclei") # Nucleos desnudos 1 - 10
+names(bc_10)[8]<-paste("bland_Chromatina") # Cromatina blanda 1 - 10 
+names(bc_10)[9]<-paste("Normal_nucleoli") # Nucleos normales 1 - 10 
+names(bc_10)[10]<-paste("Mitosis") # Mitosis 1 - 10 
+names(bc_10)[11]<-paste("Class") # Class (2 for Benign, 4 for malignant)
+
+```
+
+```{r}
+dim(bc_full)
+dim(bc_10)
+
+head(bc_full)
+head(bc_10)
+```
+
+
+## Data exploration and preparation
+
+```{r}
+# 1234567890123456789012345678901234567890123456789012345678901234567890
+bc <- bc_full[,-1]  
+
+bc_s <- bc_10[,-1] 
+
+# Figura 1. Izq
+#str(bc)
+
+table(is.na(bc_s))
+``` 
+
+```{r}
+for (i in 1:length(bc_s$Class)){
+  if (bc_s$Class[i]==2) {
+  bc_s$Class[i]<-"B"}
+  else { bc_s$Class[i]<- "M"
+  }}
+
+table(is.na(bc_s))
+# EMPIEZAN A SALIR NA's
+
+```
+
+```{r}
+bc_s[,1] <- as.numeric(bc_s[,1])
+bc_s[,2] <- as.numeric(bc_s[,2])
+bc_s[,3] <- as.numeric(bc_s[,3])
+bc_s[,4] <- as.numeric(bc_s[,4])
+bc_s[,5] <- as.numeric(bc_s[,5])
+bc_s[,6] <- as.numeric(bc_s[,6])
+bc_s[,7] <- as.numeric(bc_s[,7])
+bc_s[,8] <- as.numeric(bc_s[,8])
+bc_s[,9] <- as.numeric(bc_s[,9])
+bc_s[,10] <- as.character(bc_s[,10])
+
+#str(bc_s)
+table(is.na(bc_s))
+
+bc_s <- na.omit(bc_s)
+
+table(is.na(bc_s))
+
+# se pierden 160 datos
+```
+
+```{r echo=FALSE}
+dim <- dim(bc)
+num_train <- round((dim[1]*params$ptrain),0)
+num_test <- dim[1] - num_train
+
+dim_s <- dim(bc_s)
+num_train_s <- round((dim_s[1]*params$ptrain),0)
+num_test_s <- dim_s[1] - num_train_s
+```
+
+```{r}
+# Benign / Malignant
+bc$diagnosis <- factor(bc$diagnosis, levels= c("B", "M"), labels=c("Benign", "Malignant"))
+table(bc$diagnosis)
+
+bc_s$Class <- factor(bc_s$Class, levels= c("B", "M"), labels=c("Benign", "Malignant"))
+table(bc_s$Class)
+```
+
+```{r}
+table(is.na(bc))
+table(is.na(bc_s))
+
+dim(bc_s)
+
+table(is.na(bc_s))
+dim(bc_s)
+```
+
+```{r}
+normalize <- function(x) {
+return ((x - min(x)) / (max(x) - min(x)))
+}
+
+bc_n <- as.data.frame(lapply(bc[1:(round(dim[2],0)-1)], normalize))
+
+#bc_z <- as.data.frame(scale(bc[1:(round(dim[2],0)-1)]))
+
+bc_s_n <- as.data.frame(lapply(bc_s[1:(round(dim_s[2],0)-1)], normalize))
+
+#str(bc_n)
+str(bc_s)
+head(bc_s, 10)
+```
+
+```{r}
+# Figura 1. der
+par(mar=c(11,3,1,1))
+
+means_n <- as.numeric((lapply(bc_n, mean)))
+
+boxplot(bc_n[1:30], las=2, col="lightblue")
+# , main="Figura 2. Distribucion de las variables del dataset normalizadas"
+abline(h=mean(means_n), col="red")
+```
+
+```{R fig.width=9, fig.height=9}
+par(mar=c(10,3,1,1))
+
+means_n_s <- as.numeric((lapply(bc_s_n, mean)))
+
+boxplot(bc_s_n[,-1], las=2, col="lightblue")
+# , main="Figura 2. Distribucion de las variables del dataset normalizadas"
+abline(h=mean(means_n_s), col="red")
+```
+
+# Correlogram
+```{r, fig.height=15, fig.width=15}
+library(corrplot)
+par(mar=c(11,3,1,1))
+
+C <- cor(round(as.matrix(bc_n[1:30]), 4))
+
+corrplot(C, method = "pie")
+
+C2 <- cor(round(as.matrix(bc_s_n[1:9]),4))
+
+corrplot(C2, method = "pie")
+```
+
+# Creation training and test datasets for 10-fold crossvalidation 
+```{r}
+# 2021-07-19
+library(caret)
+
+bc_n_full <- cbind(bc_n, bc$diagnosis)
+
+names(bc_n_full)[31] <- "diagnosis"
+
+dim(bc_n_full)
+
+set.seed(params$seed_train)
+
+inTrain <- createDataPartition( y = 1:nrow(bc_n_full),
+                                p = params$ptrain,
+                                list = FALSE )
+
+# KNN, SVM, RF
+train <- bc_n_full[inTrain, ]
+test <- bc_n_full[-inTrain, ]
+
+table(train[,31])
+table(test[,31])
+
+#ANN
+#Data Partition
+set.seed(params$seed_alg)
+
+
+inTrain_ann <- createDataPartition(y=bc_n_full$diagnosis, p=round(params$ptrain,4), list=FALSE)
+
+
+# Normalized dataset
+ann_data_n <- cbind(bc_n, bc$diagnosis)
+names(ann_data_n)[31] <- "diagnosis"
+
+train_ann <- ann_data_n[inTrain_ann, ]
+test_ann  <- ann_data_n[-inTrain_ann, ]
+
+#train.set <- dataset[inTrain,]
+#test.set  <- dataset[-inTrain,]
+
+( c(nrow(train)/nrow(test), nrow(train_ann)/nrow(test_ann)) )
+# should be around 2
+
+# SMALL DATASET
+# bc_s_n refers to Breast Cancer Small dataset Normalized
+
+bc_s_n_full <- cbind(bc_s_n, bc_s$Class)
+
+names(bc_s_n_full)[10] <- "diagnosis"
+
+
+dim(bc_s_n_full)
+
+
+
+inTrain_s <- createDataPartition( y = 1:nrow(bc_s_n_full),
+                                p = params$ptrain,
+                                list = FALSE )
+
+train_s <- bc_s_n_full[inTrain, ]
+test_s <- bc_s_n_full[-inTrain, ]
+
+
+
+table(train_s[,10])
+table(test_s[,10])
+
+#ANN
+#Data Partition
+inTrain_s_ann <- createDataPartition(y=1:nrow(bc_s_n_full), 
+                                     p=params$ptrain, 
+                                     list=FALSE)
+
+
+# Normalized dataset
+ann_data_s_n <- bc_s_n_full 
+
+train_s_ann <- ann_data_s_n[inTrain_ann,]
+test_s_ann  <- ann_data_s_n[-inTrain_ann,]
+
+#train.set <- dataset[inTrain,]
+#test.set  <- dataset[-inTrain,]
+
+( c(nrow(train_s)/nrow(test_s), nrow(train_s_ann)/nrow(test_s_ann)) )
+
+table(train_s$diagnosis)
+table(test_s$diagnosis)
+
+
+```
+
+# KNN
+```{r}
+set.seed(params$seed_alg)
+
+start_time <- Sys.time()
+
+ctrl <- trainControl(method="repeatedcv",repeats = 10, number = 10, 
+                     classProbs = T, savePredictions = T) 
+model_knn <- train(diagnosis ~ ., data = train, method = "knn", 
+                   trControl = ctrl, preProcess = c("center","scale"),
+                   tuneLength = 20)
+
+end_time <- Sys.time()
+
+(knn_time <- end_time - start_time)
+```
+
+## Confusion matrix KNN
+```{r}
+prediction <- predict(model_knn, test) 
+ct <- table(prediction, test$diagnosis) 
+(cm_knn <- confusionMatrix(ct, positive="Malignant"))
+```
+
+# SVM
+```{r}
+set.seed(params$seed_alg)
+
+start_time <- Sys.time()
+
+model_svm <- train(diagnosis ~ ., train, method='svmLinear',
+               trControl= trainControl(method='cv',number=10,repeats = 10,
+                                       classProbs = T,
+                                       savePredictions = T),
+               tuneGrid= NULL, trace = FALSE)
+
+end_time <- Sys.time()
+
+(svm_time <- end_time - start_time)
+```
+
+## Confusion matrix SVM
+```{r}
+prediction <- predict(model_svm, test) 
+ct <- table(prediction, test$diagnosis) 
+(cm_svm <- confusionMatrix(ct, positive="Malignant"))
+```
+
+# RF
+```{r}
+set.seed(params$seed_alg)
+
+ctrl <- trainControl( method = "repeatedcv",
+                      number = 10,
+                      repeats = 10,
+                      summaryFunction = defaultSummary,
+                      verboseIter = FALSE,
+                      classProbs = TRUE,
+                      savePredictions = TRUE)
+# repeats=3 )
+
+## Tunegrid for Random Forest
+# mtry define cuantas variables se seleccionan al azar en cada split. Por
+# defecto sqrt(n.variables)
+grid_rf <- expand.grid(.mtry = c(2,4,8,16))
+
+start_time <- Sys.time()
+
+model_rf <- train (diagnosis ~ .,
+                   data = train,
+                   method ="rf",
+                   trControl=ctrl,
+                   #tuneLength = 9,
+                   tuneGrid = grid_rf,
+                   metric="Accuracy",
+                   prePoc = c("center", "scale"),
+                   verbose =FALSE,
+                   trace = FALSE
+                   )
+
+end_time <- Sys.time()
+
+(rf_time <- end_time - start_time)
+```
+
+## Confusion matrix RF
+```{r}
+pred_rf <- predict (model_rf, newdata = test)
+
+(cm_rf <- confusionMatrix(data=pred_rf, test$diagnosis, positive = "Malignant"))
+```
+
+# ANN
+```{r}
+library(nnet)
+library(NeuralNetTools)
+```
+
+```{r warning=FALSE,message=FALSE, fig.height=15, fig.width=15}
+# 10 fold-crossvalidation model
+
+start_time <- Sys.time()
+
+model_ann <- train(diagnosis ~ ., train_ann, method='nnet', 
+               trControl= trainControl(method='cv', number=10), 
+               tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
+
+
+end_time <- Sys.time()
+
+(ann_time <- end_time - start_time)
+
+plotnet(model_ann, alpha=0.6)
+
+summary(model_ann)
+
+prediction_ann <- predict(model_ann, test_ann[-31])                    # predict
+table(prediction, test_ann$diagnosis)                                  # compare
+
+# predict can also return the probability for each class:
+prediction_ann_prob <- predict(model_ann, test_ann[-31], type="prob") 
+
+head(prediction)
+```
+
+# Confusion Matrix ANN
+
+```{r}
+(cm_ann <- confusionMatrix(predict(model_ann, test_ann[,-31],type="raw"),
+                          test_ann[,31], positive = "Malignant"))
+#predict(model, test.set[,31],type="raw")
+#test.set[,31]
+```
+
+# KNN Small Dataset
+```{r}
+set.seed(params$seed_alg)
+
+start_time <- Sys.time()
+
+ctrl <- trainControl(method="repeatedcv",repeats = 10, number = 10, 
+                     classProbs = T, savePredictions = T) 
+model_knn_s <- train(diagnosis ~ ., data = train_s, method = "knn", 
+                   trControl = ctrl, preProcess = c("center","scale"),
+                   tuneLength = 20)
+
+end_time <- Sys.time()
+
+(knn_time_s <- end_time - start_time)
+```
+
+## Confusion matrix KNN Small Dataset
+```{r}
+prediction <- predict(model_knn_s, test_s) 
+ct <- table(prediction, test_s$diagnosis) 
+(cm_knn_s <- confusionMatrix(ct, positive="Malignant"))
+```
+
+# SVM Small Dataset
+```{r}
+set.seed(params$seed_alg)
+
+start_time <- Sys.time()
+
+model_svm_s <- train(diagnosis ~ ., train_s, method='svmLinear',
+               trControl= trainControl(method='cv',number=10,repeats = 10,
+                                       classProbs = T,
+                                       savePredictions = T),
+               tuneGrid= NULL, trace = FALSE)
+
+end_time <- Sys.time()
+
+(svm_time_s <- end_time - start_time)
+```
+
+## Confusion matrix SVM Small Dataset
+```{r}
+prediction <- predict(model_svm_s, test_s) 
+ct <- table(prediction, test_s$diagnosis) 
+(cm_svm_s <- confusionMatrix(ct, positive="Malignant"))
+```
+
+# RF Small Dataset
+```{r}
+set.seed(params$seed_alg)
+
+ctrl <- trainControl( method = "repeatedcv",
+                      number = 10,
+                      repeats = 10,
+                      summaryFunction = defaultSummary,
+                      verboseIter = FALSE,
+                      classProbs = TRUE,
+                      savePredictions = TRUE)
+# repeats=3 )
+
+## Tunegrid for Random Forest
+# mtry define cuantas variables se seleccionan al azar en cada split. Por
+# defecto sqrt(n.variables)
+grid_rf <- expand.grid(.mtry = c(2,4,8,16))
+
+start_time <- Sys.time()
+
+model_rf_s <- train (diagnosis ~ .,
+                   data = train_s,
+                   method ="rf",
+                   trControl=ctrl,
+                   #tuneLength = 9,
+                   tuneGrid = grid_rf,
+                   metric="Accuracy",
+                   prePoc = c("center", "scale"),
+                   verbose =FALSE,
+                   trace = FALSE
+                   )
+
+end_time <- Sys.time()
+
+(rf_time_s <- end_time - start_time)
+```
+
+## Confusion matrix RF Small Dataset
+```{r}
+pred_rf_s <- predict (model_rf_s, newdata = test_s)
+
+(cm_rf_s <- confusionMatrix(data=pred_rf_s, test_s$diagnosis, positive = "Malignant"))
+```
+
+# ANN Small Dataset
+```{r}
+library(nnet)
+library(NeuralNetTools)
+```
+
+```{r warning=FALSE,message=FALSE, fig.height=15, fig.width=15}
+# 10 fold-crossvalidation model
+
+start_time <- Sys.time()
+
+model_ann_s <- train(diagnosis ~ ., train_s_ann, method='nnet', 
+               trControl= trainControl(method='cv', number=10), 
+               tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
+
+end_time <- Sys.time()
+
+(ann_time_s <- end_time - start_time)
+
+plotnet(model_ann_s, alpha=0.6)
+
+summary(model_ann)
+
+prediction_ann_s <- predict(model_ann_s, test_s_ann[-10])                        # predict
+table(prediction, test_s_ann$diagnosis)                                  # compare
+
+# predict can also return the probability for each class:
+prediction_ann_s_prob <- predict(model_ann_s, test_s_ann[-10], type="prob")  
+
+head(prediction)
+```
+
+```{r}
+(cm_ann_s <- confusionMatrix(predict(model_ann_s, test_s_ann[,-10],type="raw"),
+                          test_s_ann[,10], positive = "Malignant"))#predict(model, test.set[,31],type="raw")
+#test.set[,31]
+```
+
+# TABLA 1
+```{r}
+print("KNN")
+cm_knn$overall[1]
+cm_knn$overall[2]
+cm_knn$byClass
+
+print("SVM")
+cm_svm$overall[1]
+cm_svm$overall[2]
+cm_svm$byClass
+
+print("RF")
+cm_rf$overall[1]
+cm_rf$overall[2]
+cm_rf$byClass
+
+print("ANN")
+cm_ann$overall[1]
+cm_ann$overall[2]
+cm_ann$byClass
+```
+
+Tabla 1 Small
+```{r}
+print("KNN")
+cm_knn_s$overall[1]
+cm_knn_s$overall[2]
+cm_knn_s$byClass
+
+print("SVM")
+cm_svm_s$overall[1]
+cm_svm_s$overall[2]
+cm_svm_s$byClass
+
+print("RF")
+cm_rf_s$overall[1]
+cm_rf_s$overall[2]
+cm_rf_s$byClass
+
+print("ANN")
+cm_ann_s$overall[1]
+cm_ann_s$overall[2]
+cm_ann_s$byClass
+```
+
+# CURVAS ROC
+```{r fig.height=8, fig.width=8}
+library(pROC)
+
+# "royalblue","dodgerblue", "deepskyblue", "lightskyblue"
+
+par(mfrow=c(2,2))
+
+plot.roc(model_knn$pred$obs,
+         model_knn$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE, 
+         col="royalblue", main = "Curva ROC para kNN")
+
+plot.roc(model_svm$pred$obs,
+         model_svm$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="dodgerblue", main = "Curva ROC para SVM")
+
+plot.roc(model_rf$pred$obs,
+         model_rf$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="deepskyblue", main = "Curva ROC para RF")
+
+plot.roc(test_ann$diagnosis, 
+         prediction_ann_prob$Malignant,  
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="lightskyblue", main = "Curva ROC para ANN")
+```
+
+
+
+```{r}
+# https://stackoverflow.com/questions/46891681/calculating-auc-from-nnet-model 
+# https://www.r-bloggers.com/2016/11/calculating-auc-the-area-under-a-roc-curve/ 
+
+#plot.roc(test_ann$diagnosis, 
+#         prediction_ann_prob$Malignant, 
+#         smoothed = TRUE,
+#         legacy.axes=TRUE,
+#         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+#         auc.polygon=TRUE, 
+#         max.auc.polygon=TRUE, grid=TRUE,
+#         print.auc=TRUE, show.thres=TRUE,
+#         col="blue", main = "Curva ROC para RF")
+```
+
+# Small dataset
+```{r fig.height=8, fig.width=8}
+library(pROC)
+
+# "royalblue","dodgerblue", "deepskyblue", "lightskyblue"
+
+par(mfrow=c(2,2))
+
+plot.roc(model_knn_s$pred$obs,
+         model_knn_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE, 
+         col="royalblue", main = "Curva ROC para kNN")
+
+plot.roc(model_svm_s$pred$obs,
+         model_svm_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="dodgerblue", main = "Curva ROC para SVM")
+
+plot.roc(model_rf_s$pred$obs,
+         model_rf_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="deepskyblue", main = "Curva ROC para RF")
+
+plot.roc(test_s_ann$diagnosis, 
+         prediction_ann_s_prob$Malignant,  
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="lightskyblue", main = "Curva ROC para ANN")
+```
+
+
+```{r fig.height=16, fig.width=12}
+#cm_knn
+#cm_svm
+#cm_rf
+#cm_ann
+
+par(mfrow=c(3,3), pty="m")
+
+# 12345678901234567890123456789012345678901234567890123456789012345678901234567890
+
+color <- c("royalblue","dodgerblue", "deepskyblue", "lightskyblue")
+
+Acc <- c(cm_knn_s$overall[1], cm_svm_s$overall[1], 
+         cm_rf_s$overall[1], cm_ann_s$overall[1])
+  
+Kappa <- c(cm_knn_s$overall[2], cm_svm_s$overall[2], 
+           cm_rf_s$overall[2], cm_ann_s$overall[1])
+
+Sensib <- c(cm_knn_s$byClass[1], cm_svm_s$byClass[1], 
+            cm_rf_s$byClass[1], cm_ann_s$byClass[1])
+
+Espec <- c(cm_knn_s$byClass[2], cm_svm_s$byClass[2], 
+           cm_rf_s$byClass[2], cm_ann_s$byClass[2])
+
+PPV <- c(cm_knn_s$byClass[3], cm_svm_s$byClass[3], 
+         cm_rf_s$byClass[3], cm_ann_s$byClass[3])
+
+NPV <- c(cm_knn_s$byClass[4], cm_svm_s$byClass[4], 
+         cm_rf_s$byClass[4], cm_ann_s$byClass[4])
+
+F1 <- c(cm_knn_s$byClass[7], cm_svm_s$byClass[7], 
+        cm_rf_s$byClass[7], cm_ann_s$byClass[7])
+  
+AUC <- c(0.991, 0.994, 0.993, 0.997)
+
+times <- c(knn_time_s, svm_time_s, rf_time_s, ann_time_s)
+
+time_p <- barplot(as.vector(times), names.arg=c("kNN", "SVM", "RF", "ANN"), 
+                  col = color, ylab=c("Proporcion"), main="Tiempo")
+text(x = time_p, y = times, label = round(times,3), pos = 1, cex = 0.8, col = 
+       "black")
+
+Acc_p <- barplot(Acc, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Exactitud (Accuracy)")
+text(x = Acc_p, y = Acc-0.05, label = round(Acc,4), pos = 1, cex = 0.8, col = 
+       "black")
+
+K_p <- barplot(Kappa, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Kappa")
+text(x = K_p, y = Kappa-0.05, label = round(Kappa,4), pos = 1, cex = 0.8, col = 
+       "black")
+
+Sens_p <- barplot(Sensib, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Sensibilidad")
+text(x = Sens_p, y = Sensib-0.05, label = round(Sensib,4), pos = 1, cex = 0.8, col = 
+       "black")
+
+Espe_p <- barplot(Espec, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Especificidad")
+text(x = Espe_p, y = Espec-0.05, label = round(Espec,4), pos = 1, cex = 0.8, col = 
+       "black")
+
+PPV_p <- barplot(PPV, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Valor Predictivo Positivo")
+text(x = PPV_p, y = PPV-0.05, label = round(PPV,4), pos = 1, cex = 0.8, col = "black")
+
+NPV_p <- barplot(Kappa, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="Valor Predictivo Negativo")
+text(x = NPV_p, y = NPV-0.05, label = round(NPV,4), pos = 1, cex = 0.8, col = "black")
+
+F1_p <- barplot(F1, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="F1")
+text(x = F1_p, y = F1-0.05, label = round(F1,4), pos = 1, cex = 0.8, col = "black")
+
+AUC_p <- barplot(AUC, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+        ylab=c("Proporcion"), main="AUC")
+text(x = AUC_p, y = AUC, label = round(AUC,4), pos = 1, cex = 0.8, col = "black")
+
+```
+
+```{r}
+print(sessionInfo())
+```
+
+# Congreso
+```{r}
+str(bc_s)
+head(bc_s, 10)
+``` 
+
+```{R fig.width=9, fig.height=9}
+par(mar=c(10,3,1,1))
+
+means_n_s <- as.numeric((lapply(bc_s_n, mean)))
+
+boxplot(bc_s_n[,-1], las=2, col="lightblue")
+# , main="Figura 2. Distribucion de las variables del dataset normalizadas"
+abline(h=mean(means_n_s), col="red")
+``` 
+
+```{r, fig.height=15, fig.width=15}
+library(corrplot)
+par(mar=c(11,3,1,1))
+
+C <- cor(round(as.matrix(bc_n[1:30]), 4))
+
+corrplot(C, method = "pie")
+
+C2 <- cor(round(as.matrix(bc_s_n[1:9]),4))
+
+corrplot(C2, method = "pie")
+```
+
+```{r}
+(cm_knn_s)
+(cm_svm_s)
+(cm_rf_s)
+```
+
+```{r}
+print("KNN")
+cm_knn_s$overall[1]
+cm_knn_s$overall[2]
+cm_knn_s$byClass
+
+print("SVM")
+cm_svm_s$overall[1]
+cm_svm_s$overall[2]
+cm_svm_s$byClass
+
+print("RF")
+cm_rf_s$overall[1]
+cm_rf_s$overall[2]
+cm_rf_s$byClass
+``` 
+
+```{r fig.height=6, fig.width=18}
+library(pROC)
+
+# "royalblue","dodgerblue", "deepskyblue", "lightskyblue"
+
+par(mfrow=c(1,3), pty="m")
+
+plot.roc(model_knn_s$pred$obs,
+         model_knn_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE, 
+         col="royalblue", main = "Curva ROC para kNN")
+
+plot.roc(model_svm_s$pred$obs,
+         model_svm_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="dodgerblue", main = "Curva ROC para SVM")
+
+plot.roc(model_rf_s$pred$obs,
+         model_rf_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="deepskyblue", main = "Curva ROC para RF")
+
+``` 
+
+```{r fig.height=16, fig.width=12}
+
+par(mfrow=c(4,3), pty="m")
+
+#Acc <- c(max(knn_fit_n$results$Accuracy), 
+#         max(model$results$Accuracy), 
+#         max(rf_caret_model$results$Accuracy))
+
+#Kappa <- c(max(knn_fit_n$results$Kappa),
+#           max(model$results$Kappa), 
+#           max(rf_caret_model$results$Kappa))
+
+color <- c("royalblue", "dodgerblue", "deepskyblue")
+
+Acc <- c(cm_knn_s$overall[1], cm_svm_s$overall[1], cm_rf_s$overall[1])
+  
+Kappa <- c(cm_knn_s$overall[2], cm_svm_s$overall[2], cm_rf_s$overall[2])
+
+Sensib <- c(cm_knn_s$byClass[1], cm_svm_s$byClass[1], cm_rf_s$byClass[1])
+
+Espec <- c(cm_knn_s$byClass[2], cm_svm_s$byClass[2], cm_rf_s$byClass[2])
+
+PPV <- c(cm_knn_s$byClass[3], cm_svm_s$byClass[3], cm_rf_s$byClass[3])
+
+NPV <- c(cm_knn_s$byClass[4], cm_svm_s$byClass[4], cm_rf_s$byClass[4])
+
+F1 <- c(cm_knn_s$byClass[7], cm_svm_s$byClass[7], cm_rf_s$byClass[7])
+  
+AUC <- c(0.989, 0.996, 0.992)
+
+times_3 <- times[1:3]
+
+time_p <- barplot(as.vector(times_3), names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Time")
+text(x = time_p, y = times, label = round(times,3), pos = 1, cex = 0.8, col = "black")
+
+Acc_p <- barplot(Acc, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Exactitud (Accuracy)")
+text(x = Acc_p, y = Acc-0.05, label = round(Acc,4), pos = 1, cex = 0.8, col = "black")
+
+K_p <- barplot(Kappa, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Kappa")
+text(x = K_p, y = Kappa-0.05, label = round(Kappa,4), pos = 1, cex = 0.8, col = "black")
+
+Sens_p <- barplot(Sensib, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Sensititivy")
+text(x = Sens_p, y = Sensib-0.05, label = round(Sensib,4), pos = 1, cex = 0.8, col = "black")
+
+Espe_p <- barplot(Espec, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Specificity")
+text(x = Espe_p, y = Espec-0.05, label = round(Espec,4), pos = 1, cex = 0.8, col = "black")
+
+PPV_p <- barplot(PPV, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Positive Predictive Value")
+text(x = PPV_p, y = PPV-0.05, label = round(PPV,4), pos = 1, cex = 0.8, col = "black")
+
+NPV_p <- barplot(Kappa, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="Negative Predictive Value")
+text(x = NPV_p, y = NPV-0.05, label = round(NPV,4), pos = 1, cex = 0.8, col = "black")
+
+F1_p <- barplot(F1, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="F1")
+text(x = F1_p, y = F1-0.05, label = round(F1,4), pos = 1, cex = 0.8, col = "black")
+
+AUC_p <- barplot(AUC, names.arg=c("kNN", "SVM", "RF"), col = color,
+        ylab=c("Proportion"), main="AUC")
+text(x = AUC_p, y = AUC, label = round(AUC,4), pos = 1, cex = 0.8, col = "black")
+
+plot.roc(model_knn_s$pred$obs,
+         model_knn_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE, 
+         col="royalblue", main = "ROC Curve for kNN")
+
+plot.roc(model_svm_s$pred$obs,
+         model_svm_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="dodgerblue", main = "ROC Curve for SVM")
+
+plot.roc(model_rf_s$pred$obs,
+         model_rf_s$pred$Malignant,
+         smoothed = TRUE,
+         legacy.axes=TRUE,
+         # arguments for ci
+         ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+         # arguments for plot
+         #plot=TRUE, 
+         auc.polygon=TRUE, 
+         max.auc.polygon=TRUE, grid=TRUE,
+         print.auc=TRUE, show.thres=TRUE,
+         col="deepskyblue", main = "ROC Curve for RF")
+``` 
+
+
+
+
+
