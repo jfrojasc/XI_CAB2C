@@ -804,7 +804,7 @@ PPV_p <- barplot(PPV, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
         ylab=c("Proporcion"), main="Valor Predictivo Positivo")
 text(x = PPV_p, y = PPV-0.05, label = round(PPV,4), pos = 1, cex = 0.8, col = "black")
 
-NPV_p <- barplot(Kappa, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
+NPV_p <- barplot(NPV, names.arg=c("kNN", "SVM", "RF", "ANN"), col = color,
         ylab=c("Proporcion"), main="Valor Predictivo Negativo")
 text(x = NPV_p, y = NPV-0.05, label = round(NPV,4), pos = 1, cex = 0.8, col = "black")
 
